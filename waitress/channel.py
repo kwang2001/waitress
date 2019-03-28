@@ -318,14 +318,14 @@ class HTTPChannel(wasyncore.dispatcher, object):
             # the async mainloop might be popping data off outbuf; we can
             # block here waiting for it because we're in a task thread
             with self.outbuf_lock:
+                overflowed = False
                 while (
                     self.connected and
                     self.total_outbufs_len() > self.adj.outbuf_high_watermark
                 ):
+                    overflowed = True
                     self.outbuf_cv.wait()
-                # check again after acquiring the lock to ensure we the
-                # outbufs are not closed
-                if not self.connected:  # pragma: no cover
+                if not self.connected:
                     raise ClientDisconnected
                 if data.__class__ is ReadOnlyFileBasedBuffer:
                     # they used wsgi.file_wrapper
@@ -333,6 +333,12 @@ class HTTPChannel(wasyncore.dispatcher, object):
                     nextbuf = OverflowableBuffer(self.adj.outbuf_overflow)
                     self.outbufs.append(nextbuf)
                 else:
+                    # if we overflowed then start a new buffer to ensure
+                    # the original eventually gets pruned otherwise it may
+                    # grow unbounded
+                    if overflowed:
+                        nextbuf = OverflowableBuffer(self.adj.outbuf_overflow)
+                        self.outbufs.append(nextbuf)
                     self.outbufs[-1].append(data)
                 num_bytes = len(data)
                 self.total_outbufs_len += num_bytes
