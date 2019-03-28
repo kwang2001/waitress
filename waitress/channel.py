@@ -77,6 +77,7 @@ class HTTPChannel(wasyncore.dispatcher, object):
         self.task_lock = threading.Lock()
         # outbuf_lock used to access any outbuf
         self.outbuf_lock = threading.RLock()
+        self.outbuf_cv = threading.Condition(self.outbuf_lock)
 
         wasyncore.dispatcher.__init__(self, sock, map=map)
 
@@ -219,6 +220,9 @@ class HTTPChannel(wasyncore.dispatcher, object):
         if locked:
             try:
                 self._flush_some()
+
+                if self.total_outbufs_len() < self.adj.outbuf_high_watermark:
+                    self.outbuf_cv.notify()
             finally:
                 self.outbuf_lock.release()
 
@@ -314,6 +318,11 @@ class HTTPChannel(wasyncore.dispatcher, object):
             # the async mainloop might be popping data off outbuf; we can
             # block here waiting for it because we're in a task thread
             with self.outbuf_lock:
+                while (
+                    self.connected and
+                    self.total_outbufs_len() > self.adj.outbuf_high_watermark
+                ):
+                    self.outbuf_cv.wait()
                 # check again after acquiring the lock to ensure we the
                 # outbufs are not closed
                 if not self.connected:  # pragma: no cover
