@@ -416,7 +416,7 @@ class HTTPChannel(wasyncore.dispatcher, object):
                 else:
                     # before processing a new request, ensure there is not too
                     # much data in the outbufs waiting to be flushed
-                    # XXX: currently readable() returns False while we are
+                    # NB: currently readable() returns False while we are
                     # flushing data so we know no new requests will come in
                     # that we need to account for, otherwise it'd be better
                     # to do this check at the start of the request instead of
