@@ -54,6 +54,7 @@ class HTTPChannel(wasyncore.dispatcher, object):
     requests = ()                # currently pending requests
     sent_continue = False        # used as a latch after sending 100 continue
     force_flush = False          # indicates a need to flush the outbuf
+    logged_write_overflow = False
 
     #
     # ASYNCHRONOUS METHODS (including __init__)
@@ -319,7 +320,7 @@ class HTTPChannel(wasyncore.dispatcher, object):
             # the async mainloop might be popping data off outbuf; we can
             # block here waiting for it because we're in a task thread
             with self.outbuf_lock:
-                overflowed = self.flush_outbufs_below_high_watermark()
+                overflowed = self._flush_outbufs_below_high_watermark()
                 if not self.connected:
                     raise ClientDisconnected
                 if data.__class__ is ReadOnlyFileBasedBuffer:
@@ -344,10 +345,16 @@ class HTTPChannel(wasyncore.dispatcher, object):
             return num_bytes
         return 0
 
-    def flush_outbufs_below_high_watermark(self):
+    def _flush_outbufs_below_high_watermark(self):
         overflowed = self.total_outbufs_len > self.adj.outbuf_high_watermark
         # check first to avoid locking if possible
         if overflowed:
+            if not self.logged_write_overflow:
+                self.logger.warn(
+                    'Reached outbuf_high_watermark while serving %s' %
+                    self.requests[0].path
+                )
+                self.logged_write_overflow = True
             with self.outbuf_lock:
                 while (
                     self.connected and
@@ -415,7 +422,7 @@ class HTTPChannel(wasyncore.dispatcher, object):
                     # to do this check at the start of the request instead of
                     # at the end to account for consecutive service() calls
                     if len(self.requests) > 1:
-                        self.flush_outbufs_below_high_watermark()
+                        self._flush_outbufs_below_high_watermark()
                     request = self.requests.pop(0)
                     request.close()
 
