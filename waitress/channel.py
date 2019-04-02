@@ -321,6 +321,12 @@ class HTTPChannel(wasyncore.dispatcher, object):
             # block here waiting for it because we're in a task thread
             with self.outbuf_lock:
                 overflowed = self._flush_outbufs_below_high_watermark()
+                if overflowed and not self.logged_write_overflow:
+                    self.logger.warn(
+                        'Reached outbuf_high_watermark while serving %s' %
+                        self.requests[0].path
+                    )
+                    self.logged_write_overflow = True
                 if not self.connected:
                     raise ClientDisconnected
                 if data.__class__ is ReadOnlyFileBasedBuffer:
@@ -349,12 +355,6 @@ class HTTPChannel(wasyncore.dispatcher, object):
         overflowed = self.total_outbufs_len > self.adj.outbuf_high_watermark
         # check first to avoid locking if possible
         if overflowed:
-            if not self.logged_write_overflow:
-                self.logger.warn(
-                    'Reached outbuf_high_watermark while serving %s' %
-                    self.requests[0].path
-                )
-                self.logged_write_overflow = True
             with self.outbuf_lock:
                 while (
                     self.connected and
