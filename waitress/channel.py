@@ -221,8 +221,8 @@ class HTTPChannel(wasyncore.dispatcher, object):
             try:
                 self._flush_some()
 
-                if self.total_outbufs_len() < self.adj.outbuf_high_watermark:
-                    self.outbuf_cv.notify_all()
+                if self.total_outbufs_len < self.adj.outbuf_high_watermark:
+                    self.outbuf_cv.notify()
             finally:
                 self.outbuf_lock.release()
 
@@ -318,13 +318,7 @@ class HTTPChannel(wasyncore.dispatcher, object):
             # the async mainloop might be popping data off outbuf; we can
             # block here waiting for it because we're in a task thread
             with self.outbuf_lock:
-                overflowed = False
-                while (
-                    self.connected and
-                    self.total_outbufs_len() > self.adj.outbuf_high_watermark
-                ):
-                    overflowed = True
-                    self.outbuf_cv.wait()
+                overflowed = self.flush_outbufs_below_high_watermark(lock=False)
                 if not self.connected:
                     raise ClientDisconnected
                 if data.__class__ is ReadOnlyFileBasedBuffer:
@@ -349,6 +343,22 @@ class HTTPChannel(wasyncore.dispatcher, object):
             return num_bytes
         return 0
 
+    def flush_outbufs_below_high_watermark(self, lock=False):
+        overflowed = False
+        if lock:
+            self.outbuf_lock.acquire()
+        try:
+            while (
+                self.connected and
+                self.total_outbufs_len > self.adj.outbuf_high_watermark
+            ):
+                overflowed = True
+                self.outbuf_cv.wait()
+        finally:
+            if lock:
+                self.outbuf_lock.release()
+        return overflowed
+
     def service(self):
         """Execute all pending requests """
         with self.task_lock:
@@ -359,6 +369,9 @@ class HTTPChannel(wasyncore.dispatcher, object):
                 else:
                     task = self.task_class(self, request)
                 try:
+                    # before processing a new request, ensure there is not
+                    # too much data in the outbufs waiting to be flushed
+                    self.flush_outbufs_below_high_watermark(lock=True)
                     task.service()
                 except ClientDisconnected:
                     self.logger.warn('Client disconnected when serving %s' %
