@@ -209,7 +209,7 @@ class Adjustments(object):
 
     # The app_iter will pause when pending output is larger than this value
     # in bytes.
-    outbuf_high_watermark = 2097152
+    outbuf_high_watermark = 16777216
 
     # A tempfile should be created if the pending input is larger than
     # inbuf_overflow, which is measured in bytes. The default is 512K.  This

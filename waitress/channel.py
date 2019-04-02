@@ -222,7 +222,7 @@ class HTTPChannel(wasyncore.dispatcher, object):
                 self._flush_some()
 
                 if self.total_outbufs_len() < self.adj.outbuf_high_watermark:
-                    self.outbuf_cv.notify()
+                    self.outbuf_cv.notify_all()
             finally:
                 self.outbuf_lock.release()
 

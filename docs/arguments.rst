@@ -203,7 +203,7 @@ outbuf_high_watermark
     and will resume once enough data is written to the socket to fall below
     this threshold.
 
-    Default: ``2097152`` (2MB)
+    Default: ``16777216`` (16MB)
 
 inbuf_overflow
     A tempfile should be created if the pending input is larger than
